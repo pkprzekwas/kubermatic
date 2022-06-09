@@ -1,0 +1,86 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-setup
+spec:
+  template:
+    spec:
+      hostPID: true
+      containers:
+        - image: {{ .Values.teleport.image }}:{{ .Chart.AppVersion }}
+          name: {{ .Release.Name }}-setup
+          command: ["/usr/bin/dumb-init"]
+          args: ["/bin/bash", "-c", "sleep 36000"]
+          env:
+            - name: DEBIAN_FRONTEND
+              value: noninteractive
+          volumeMounts:
+            - mountPath: /etc/teleport
+              name: teleport-config
+            - mountPath: /usr/local/bin/teleport-scripts
+              name: teleport-scripts
+            - mountPath: /etc/systemd/system
+              name: host-etc-systemd-system
+            - mountPath: /host/etc/teleport
+              name: host-config
+            - mountPath: /run
+              name: host-run
+            - mountPath: /host/var/lib/teleport
+              name: host-storage
+            - mountPath: /sys/fs/cgroup
+              name: host-sys-fs-cgroup
+              readOnly: true
+            - mountPath: /sys/fs/cgroup/systemd
+              name: host-sys-fs-cgroup-systemd
+            - mountPath: /host/usr/local/bin
+              name: host-usr-local-bin
+            - mountPath: /var/log/teleport.log
+              name: host-var-log-teleportlog
+              readOnly: true
+            - mountPath: /var/run/dbus
+              name: host-var-run-dbus
+          resources:
+    {{ toYaml .Values.teleport.resources | indent 8 }}
+      volumes:
+        - name: teleport-config
+          configMap:
+            name: {{ .Release.Name }}-config
+        - name: teleport-scripts
+          configMap:
+            name: {{ .Release.Name }}-scripts
+            defaultMode: 0777
+        - name: host-etc-systemd-system
+          hostPath:
+            path: /etc/systemd/system
+            type: Directory
+        - name: host-config
+          hostPath:
+            path: /etc/teleport
+            type: DirectoryOrCreate
+        - name: host-run
+          hostPath:
+            path: /run
+            type: Directory
+        - name: host-sys-fs-cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: host-sys-fs-cgroup-systemd
+          hostPath:
+            path: /sys/fs/cgroup/systemd
+            type: Directory
+        - name: host-usr-local-bin
+          hostPath:
+            path: /usr/local/bin
+            type: DirectoryOrCreate
+        - name: host-storage
+          hostPath:
+            path: /var/lib/teleport
+            type: DirectoryOrCreate
+        - name: host-var-log-teleportlog
+          hostPath:
+            path: /var/log/teleport.log
+            type: FileOrCreate
+        - name: host-var-run-dbus
+          hostPath:
+            path: /var/run/dbus

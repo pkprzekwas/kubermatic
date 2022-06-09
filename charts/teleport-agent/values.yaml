@@ -1,0 +1,8 @@
+teleport:
+  image: quay.io/gravitational/teleport
+  token: "4809250efd2366191e1f829ab768538f"
+  auth_servers:
+    - patryk-teleport.lab.kubermatic.io:443
+  server_labels:
+    node-type: kubernetes-worker
+  resources: {}

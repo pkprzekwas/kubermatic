@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  teleport.yaml: |
+    teleport:
+      log:
+        output: /var/log/teleport.log
+        severity: INFO
+      auth_token: {{ .Values.teleport.token }}
+      data_dir: /var/lib/teleport
+      auth_servers:
+      {{- range .Values.teleport.auth_servers }}
+      - {{ . }}
+      {{- end }}
+
+    ssh_service:
+      enabled: yes
+      labels:
+      {{- toYaml .Values.teleport.server_labels | nindent 8 }}
+
+    auth_service:
+      enabled: no
+
+    proxy_service:
+      enabled: no
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-scripts
+data:
+  bootstrap.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    echo "Installing systemd binaries inside container"
+    apt-get -y update && apt-get -y install systemd
+
+    HOST_SYSTEMD_UNIT_PATH=/etc/systemd/system/teleport.service
+    echo "Writing ${HOST_SYSTEMD_UNIT_PATH} to host filesystem"
+    cat << EOF > ${HOST_SYSTEMD_UNIT_PATH}
+    [Unit]
+    Description=Teleport SSH Service
+    After=network.target
+
+    [Service]
+    Type=simple
+    Restart=on-failure
+    ExecStart=/usr/local/bin/teleport start -c /etc/teleport/teleport.yaml --pid-file=/run/teleport.pid
+    ExecReload=/bin/kill -HUP \$MAINPID
+    PIDFile=/run/teleport.pid
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+
+    systemctl daemon-reload
+
+    CONTAINER_TELEPORT_BINARY_PATH=/usr/local/bin/teleport
+    HOST_TELEPORT_BINARY_PATH=/host/usr/local/bin/teleport
+
+    cp ${CONTAINER_TELEPORT_BINARY_PATH} ${HOST_TELEPORT_BINARY_PATH}
+    ls -l ${HOST_TELEPORT_BINARY_PATH}
+    echo "${HOST_TELEPORT_BINARY_PATH} version:"
+    ${HOST_TELEPORT_BINARY_PATH} version
+
+    CONTAINER_TELEPORT_CONFIG_PATH=/etc/teleport/teleport.yaml
+    HOST_TELEPORT_CONFIG_PATH=/host/etc/teleport/teleport.yaml
+    echo "Writing Teleport config (${HOST_TELEPORT_CONFIG_PATH}) to host filesystem"
+    cp ${CONTAINER_TELEPORT_CONFIG_PATH} ${HOST_TELEPORT_CONFIG_PATH}
+
+    systemctl enable teleport.service
+    systemctl start teleport.service
+    systemctl status teleport.service
