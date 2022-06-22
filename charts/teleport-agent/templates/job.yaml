@@ -41,6 +41,7 @@ spec:
               name: host-var-run-dbus
           resources:
     {{ toYaml .Values.teleport.resources | indent 8 }}
+      restartPolicy: Never
       volumes:
         - name: teleport-config
           configMap:
