@@ -200,15 +200,7 @@ func (p *ProjectMemberProvider) MapUserToGroups(ctx context.Context, user *kuber
 		}
 	}
 
-	if groups.Len() > 0 {
-		return groups, nil
-	} else {
-		return nil, apierrors.NewForbidden(
-			schema.GroupResource{},
-			projectID,
-			fmt.Errorf("%q doesn't belong to project %s", user.Spec.Email, projectID),
-		)
-	}
+	return groups, nil
 }
 
 func getUserBindingRole(ctx context.Context, userEmail, projectID string, client ctrlruntimeclient.Client) (string, error) {
