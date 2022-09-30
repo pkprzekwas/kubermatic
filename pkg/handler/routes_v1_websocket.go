@@ -20,6 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/go-kit/kit/endpoint"
+	httptransport "github.com/go-kit/kit/transport/http"
+	kubermaticv1 "k8c.io/kubermatic/v2/pkg/apis/kubermatic/v1"
 	"net"
 	"net/http"
 	"net/url"
@@ -94,6 +97,22 @@ func (r Routing) RegisterV1Websocket(mux *mux.Router) {
 	mux.HandleFunc("/ws/admin/settings", getSettingsWatchHandler(wsh.WriteSettings, providers, r))
 	mux.HandleFunc("/ws/me", getUserWatchHandler(wsh.WriteUser, providers, r))
 	mux.HandleFunc("/ws/projects/{project_id}/clusters/{cluster_id}/terminal", getTerminalWatchHandler(wsh.Terminal, providers, r, maxNumberOfTerminalActiveConnectionsPerUser, terminalActiveConnectionsMemoryDuration))
+	//mux.HandleFunc("/projects/{project_id}/clusters/{cluster_id}/terminal/readiness", getTerminalReadiness(providers, r))
+	mux.Methods(http.MethodGet).
+		Path("/projects/{project_id}/clusters/{cluster_id}/terminal/readiness").
+		Handler(r.checkTerminalReadiness())
+}
+
+func (r Routing) checkTerminalReadiness() http.Handler {
+	return httptransport.NewServer(
+		endpoint.Chain(
+			middleware.TokenVerifier(r.tokenVerifiers, r.userProvider),
+			middleware.UserSaver(r.userProvider),
+		)(getTerminalReadiness(r)),
+		DecodeTerminalReadinessReq,
+		EncodeJSON,
+		r.defaultServerOptions()...,
+	)
 }
 
 func getProviders(r Routing) watcher.Providers {
@@ -198,6 +217,81 @@ func (l *connections) releaseMemory() {
 	l.mutex.Unlock()
 }
 
+type TerminalReq struct {
+	// in: path
+	// required: true
+	ProjectID string `json:"project_id"`
+	// in: path
+	// required: true
+	ClusterID string `json:"cluster_id"`
+}
+
+func DecodeTerminalReadinessReq(ctx context.Context, r *http.Request) (interface{}, error) {
+	var req TerminalReq
+	var err error
+
+	req.ClusterID, err = common.DecodeClusterID(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	projectReq, err := common.DecodeProjectRequest(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	req.ProjectID = projectReq.(common.ProjectReq).ProjectID
+
+	return req, nil
+}
+
+func getTerminalReadiness(routing Routing) endpoint.Endpoint {
+	providers := getProviders(routing)
+	return func(ctx context.Context, req interface{}) (interface{}, error) {
+		user, ok := ctx.Value(kubermaticcontext.UserCRContextKey).(*kubermaticv1.User)
+		if !ok {
+			return nil, utilerrors.New(400, "sth")
+		}
+		req_ := req.(TerminalReq)
+
+		request := terminalReq{
+			ClusterID: req_.ClusterID,
+		}
+
+		clusterProvider, ctx, err := middleware.GetClusterProvider(ctx, request, providers.SeedsGetter, providers.ClusterProviderGetter)
+		if err != nil {
+			return nil, err
+		}
+		privilegedClusterProvider := clusterProvider.(provider.PrivilegedClusterProvider)
+
+		if err != nil {
+			return nil, err
+		}
+		ctx = context.WithValue(ctx, middleware.ClusterProviderContextKey, clusterProvider)
+		ctx = context.WithValue(ctx, middleware.PrivilegedClusterProviderContextKey, privilegedClusterProvider)
+		ctx = context.WithValue(ctx, kubermaticcontext.UserCRContextKey, user)
+
+		cluster, err := handlercommon.GetCluster(ctx, providers.ProjectProvider, providers.PrivilegedProjectProvider,
+			providers.UserInfoGetter, req_.ProjectID, req_.ClusterID, &provider.ClusterGetOptions{CheckInitStatus: true})
+		if err != nil {
+			return nil, err
+		}
+
+		userEmailID := wsh.EncodeUserEmailtoID(user.Spec.Email)
+		client, err := clusterProvider.GetAdminClientForUserCluster(ctx, cluster)
+		if err != nil {
+			return nil, err
+		}
+		kubeconfigSecret := &corev1.Secret{}
+		if err := client.Get(ctx, ctrlruntimeclient.ObjectKey{
+			Namespace: metav1.NamespaceSystem,
+			Name:      handlercommon.KubeconfigSecretName(userEmailID),
+		}, kubeconfigSecret); err != nil {
+			return nil, common.KubernetesErrorToHTTPError(err)
+		}
+		return nil, nil
+	}
+}
+
 func getTerminalWatchHandler(writer WebsocketTerminalWriter, providers watcher.Providers, routing Routing, maxNumberOfConnections int, memoryDuration time.Duration) func(w http.ResponseWriter, req *http.Request) {
 	connectionsPerUser := newConnections()
 
@@ -282,6 +376,8 @@ func getTerminalWatchHandler(writer WebsocketTerminalWriter, providers watcher.P
 			Name:      handlercommon.KubeconfigSecretName(userEmailID),
 		}, kubeconfigSecret); err != nil {
 			log.Logger.Debug(err)
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
 
