@@ -7,7 +7,7 @@
 - [v2.21.4](#v2214)
 - [v2.21.5](#v2215)
 
-## [2.21.5](https://github.com/kubermatic/kubermatic/releases/tag/2.21.5)
+## [v2.21.5](https://github.com/kubermatic/kubermatic/releases/tag/2.21.5)
 
 ### API Changes
 
@@ -641,7 +641,7 @@ Note that in the current state, declarative working skips KKP authentication and
 - [v2.20.11](#v22011)
 - [v2.20.12](#v22012)
 
-## [2.20.12](https://github.com/kubermatic/kubermatic/releases/tag/2.20.12)
+## [v2.20.12](https://github.com/kubermatic/kubermatic/releases/tag/2.20.12)
 
 ### Bugfixes
 
@@ -926,7 +926,7 @@ Before upgrading, make sure to read the [general upgrade guidelines](https://doc
 - [v2.19.13](#v21913)
 - [v2.19.14](#v21914)
 
-## [2.19.14](https://github.com/kubermatic/kubermatic/releases/tag/2.19.14)
+## [v2.19.14](https://github.com/kubermatic/kubermatic/releases/tag/2.19.14)
 
 ### Bugfixes
 
